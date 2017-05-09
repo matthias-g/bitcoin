@@ -2030,7 +2030,9 @@ void CConnman::ThreadMessageHandler()
 
         std::unique_lock<std::mutex> lock(mutexMsgProc);
         if (!fMoreWork) {
+            LogPrint(BCLog::CCONMAN, "CConnman going to sleep\n");
             condMsgProc.wait_until(lock, std::chrono::steady_clock::now() + std::chrono::milliseconds(100), [this] { return fMsgProcWake; });
+            LogPrint(BCLog::CCONMAN, "CConnman awake again\n");
         }
         fMsgProcWake = false;
     }
@@ -2794,7 +2796,7 @@ void CNode::AskFor(const CInv& inv)
         nRequestTime = it->second;
     else
         nRequestTime = 0;
-    LogPrint(BCLog::NET, "askfor %s  %d (%s) peer=%d\n", inv.ToString(), nRequestTime, DateTimeStrFormat("%H:%M:%S", nRequestTime/1000000), id);
+    LogPrint(BCLog::INV, "askfor %s  %d (%s) peer=%d\n", inv.ToString(), nRequestTime, DateTimeStrFormat("%H:%M:%S", nRequestTime/1000000), id);
 
     // Make sure not to reuse time indexes to keep things in the same order
     int64_t nNow = GetTimeMicros() - 1000000;
@@ -2868,7 +2870,9 @@ bool CConnman::ForNode(NodeId id, std::function<bool(CNode* pnode)> func)
 }
 
 int64_t PoissonNextSend(int64_t nNow, int average_interval_seconds) {
-    return nNow + (int64_t)(log1p(GetRand(1ULL << 48) * -0.0000000000000035527136788 /* -1/2^48 */) * average_interval_seconds * -1000000.0 + 0.5);
+    int64_t difference = (int64_t)(log1p(GetRand(1ULL << 48) * -0.0000000000000035527136788 /* -1/2^48 */) * average_interval_seconds * -1000000.0 + 0.5);
+    LogPrint(BCLog::TRICKLE, "poisson time to next send: %d\n", difference);
+    return nNow + difference;
 }
 
 CSipHasher CConnman::GetDeterministicRandomizer(uint64_t id) const

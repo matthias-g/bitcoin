@@ -32,7 +32,7 @@
 // Application startup time (used for uptime calculation)
 int64_t GetStartupTime();
 
-static const bool DEFAULT_LOGTIMEMICROS = false;
+static const bool DEFAULT_LOGTIMEMICROS = true;
 static const bool DEFAULT_LOGIPS        = false;
 static const bool DEFAULT_LOGTIMESTAMPS = true;
 
@@ -101,6 +101,10 @@ namespace BCLog {
         COINDB      = (1 << 18),
         QT          = (1 << 19),
         LEVELDB     = (1 << 20),
+        INV         = (1 << 21),
+        CCONMAN     = (1 << 22),
+        TRICKLE     = (1 << 22),
+        DISTTX      = (1 << 24),
         ALL         = ~(uint32_t)0,
     };
 }
