@@ -1535,7 +1535,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                 return true;
 
             bool fAlreadyHave = AlreadyHave(inv);
-            LogPrint(BCLog::NET, "got inv: %s  %s peer=%d\n", inv.ToString(), fAlreadyHave ? "have" : "new", pfrom->GetId());
+            LogPrint(BCLog::INV, "got inv: %s  %s peer=%d\n", inv.ToString(), fAlreadyHave ? "have" : "new", pfrom->addr.ToString());
 
             if (inv.type == MSG_TX) {
                 inv.type |= nFetchFlags;
@@ -3060,6 +3060,11 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
                 fSendTrickle = true;
                 // Use half the delay for outbound peers, as there is less privacy concern for them.
                 pto->nNextInvSend = PoissonNextSend(nNow, INVENTORY_BROADCAST_INTERVAL >> !pto->fInbound);
+                std::string timestamp;
+                timestamp = DateTimeStrFormat("%Y-%m-%d %H:%M:%S", pto->nNextInvSend/1000000);
+                if (fLogTimeMicros)
+                    timestamp += strprintf(".%06d", pto->nNextInvSend%1000000);
+                LogPrint(BCLog::TRICKLE, "trickle to peer=%d, next send not before %s (%d)\n", pto->id, timestamp, pto->nNextInvSend);
             }
 
             // Time to send but the peer has requested we not relay transactions.
@@ -3160,6 +3165,7 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
                         }
                     }
                     if (vInv.size() == MAX_INV_SZ) {
+                        LogPrint(BCLog::INV, "send inv %s to peer=%s\n", vInv[0].ToString(), pto->addr.ToString());
                         connman->PushMessage(pto, msgMaker.Make(NetMsgType::INV, vInv));
                         vInv.clear();
                     }
@@ -3167,8 +3173,12 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
                 }
             }
         }
-        if (!vInv.empty())
+        if (!vInv.empty()) {
+            for (unsigned int i = 0; i < vInv.size(); ++i) {
+                LogPrint(BCLog::INV, "send inv %s to peer=%s\n", vInv[i].ToString(), pto->addr.ToString());
+            }
             connman->PushMessage(pto, msgMaker.Make(NetMsgType::INV, vInv));
+        }
 
         // Detect whether we're stalling
         nNow = GetTimeMicros();
