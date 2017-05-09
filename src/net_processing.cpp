@@ -1071,7 +1071,7 @@ void static ProcessGetData(CNode* pfrom, const Consensus::Params& consensusParam
                     }
 
                     // Trigger the peer node to send a getblocks request for the next batch of inventory
-                    if (inv.hash == pfrom->hashContinue)
+                    if (inv.hash == pfrom->hashContinue && false)
                     {
                         // Bypass PushInventory, this must send even if redundant,
                         // and we want it right after the last block so they don't
@@ -1535,7 +1535,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                 return true;
 
             bool fAlreadyHave = AlreadyHave(inv);
-            LogPrint(BCLog::INV, "got inv: %s  %s peer=%d\n", inv.ToString(), fAlreadyHave ? "have" : "new", pfrom->addr.ToString());
+            LogPrint(BCLog::DISTTX, "got inv: %s  %s peer=%d with latency %d\n", inv.ToString(), fAlreadyHave ? "have" : "new", pfrom->addr.ToString(), pfrom->nPingUsecTime);
 
             if (inv.type == MSG_TX) {
                 inv.type |= nFetchFlags;
@@ -2489,7 +2489,11 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                     int64_t pingUsecTime = pingUsecEnd - pfrom->nPingUsecStart;
                     if (pingUsecTime > 0) {
                         // Successful ping time measurement, replace previous
-                        pfrom->nPingUsecTime = pingUsecTime;
+                        if (pfrom->nPingUsecTime) {
+                            pfrom->nPingUsecTime = (pfrom->nPingUsecTime.load() + pingUsecTime) / 2;
+                        } else {
+                            pfrom->nPingUsecTime = pingUsecTime;
+                        }
                         pfrom->nMinPingUsecTime = std::min(pfrom->nMinPingUsecTime.load(), pingUsecTime);
                     } else {
                         // This should never happen
@@ -2520,6 +2524,10 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                 pfrom->nPingNonceSent,
                 nonce,
                 nAvail);
+        } else {
+            LogPrint(BCLog::DISTTX, "pong peer=%s: %d\n",
+                     pfrom->addr.ToString(),
+                     pfrom->nPingUsecTime);
         }
         if (bPingFinished) {
             pfrom->nPingNonceSent = 0;
@@ -3047,7 +3055,7 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
             // Add blocks
             for (const uint256& hash : pto->vInventoryBlockToSend) {
                 vInv.push_back(CInv(MSG_BLOCK, hash));
-                if (vInv.size() == MAX_INV_SZ) {
+                if (vInv.size() == MAX_INV_SZ && false) {
                     connman->PushMessage(pto, msgMaker.Make(NetMsgType::INV, vInv));
                     vInv.clear();
                 }
@@ -3097,7 +3105,7 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
                     }
                     pto->filterInventoryKnown.insert(hash);
                     vInv.push_back(inv);
-                    if (vInv.size() == MAX_INV_SZ) {
+                    if (vInv.size() == MAX_INV_SZ && false) {
                         connman->PushMessage(pto, msgMaker.Make(NetMsgType::INV, vInv));
                         vInv.clear();
                     }
@@ -3163,7 +3171,7 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
                             vRelayExpiration.push_back(std::make_pair(nNow + 15 * 60 * 1000000, ret.first));
                         }
                     }
-                    if (vInv.size() == MAX_INV_SZ) {
+                    if (vInv.size() == MAX_INV_SZ && false) {
                         LogPrint(BCLog::INV, "send inv %s to peer=%s\n", vInv[0].ToString(), pto->addr.ToString());
                         connman->PushMessage(pto, msgMaker.Make(NetMsgType::INV, vInv));
                         vInv.clear();
@@ -3172,7 +3180,7 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
                 }
             }
         }
-        if (!vInv.empty()) {
+        if (!vInv.empty() && false) {
             for (unsigned int i = 0; i < vInv.size(); ++i) {
                 LogPrint(BCLog::INV, "send inv %s to peer=%s\n", vInv[i].ToString(), pto->addr.ToString());
             }
