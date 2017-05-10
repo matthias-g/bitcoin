@@ -3064,7 +3064,6 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
                 timestamp = DateTimeStrFormat("%Y-%m-%d %H:%M:%S", pto->nNextInvSend/1000000);
                 if (fLogTimeMicros)
                     timestamp += strprintf(".%06d", pto->nNextInvSend%1000000);
-                LogPrint(BCLog::TRICKLE, "trickle to peer=%d, next send not before %s (%d)\n", pto->id, timestamp, pto->nNextInvSend);
             }
 
             // Time to send but the peer has requested we not relay transactions.
