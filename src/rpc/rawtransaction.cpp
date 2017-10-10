@@ -3,28 +3,30 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "base58.h"
-#include "chain.h"
-#include "coins.h"
-#include "consensus/validation.h"
-#include "core_io.h"
-#include "init.h"
-#include "keystore.h"
-#include "validation.h"
-#include "merkleblock.h"
-#include "net.h"
-#include "policy/policy.h"
-#include "policy/rbf.h"
-#include "primitives/transaction.h"
-#include "rpc/safemode.h"
-#include "rpc/server.h"
-#include "script/script.h"
-#include "script/script_error.h"
-#include "script/sign.h"
-#include "script/standard.h"
-#include "txmempool.h"
-#include "uint256.h"
-#include "utilstrencodings.h"
+#include "../base58.h"
+#include "../chain.h"
+#include "../coins.h"
+#include "../consensus/validation.h"
+#include "../core_io.h"
+#include "../init.h"
+#include "../keystore.h"
+#include "../validation.h"
+#include "../merkleblock.h"
+#include "../net.h"
+#include "../policy/policy.h"
+#include "../policy/rbf.h"
+#include "../primitives/transaction.h"
+#include "../rpc/safemode.h"
+#include "../rpc/server.h"
+#include "../script/script.h"
+#include "../script/script_error.h"
+#include "../script/sign.h"
+#include "../script/standard.h"
+#include "../txmempool.h"
+#include "../uint256.h"
+#include "../utilstrencodings.h"
+#include "protocol.h"
+
 #ifdef ENABLE_WALLET
 #include "wallet/rpcwallet.h"
 #include "wallet/wallet.h"
@@ -32,7 +34,10 @@
 
 #include <stdint.h>
 
-#include <univalue.h>
+#include <../univalue/include/univalue.h>
+#include <boost/assign/list_of.hpp>
+
+#include "../script/interpreter.h"
 
 
 void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry)
@@ -895,7 +900,7 @@ UniValue signrawtransaction(const JSONRPCRequest& request)
 
 UniValue sendrawtransaction(const JSONRPCRequest& request)
 {
-    if (request.fHelp || request.params.size() < 1 || request.params.size() > 2)
+    if (request.fHelp || request.params.size() < 1 || request.params.size() > 3)
         throw std::runtime_error(
             "sendrawtransaction \"hexstring\" ( allowhighfees )\n"
             "\nSubmits raw transaction (serialized, hex-encoded) to local node and network.\n"
@@ -903,6 +908,7 @@ UniValue sendrawtransaction(const JSONRPCRequest& request)
             "\nArguments:\n"
             "1. \"hexstring\"    (string, required) The hex string of the raw transaction)\n"
             "2. allowhighfees    (boolean, optional, default=false) Allow high fees\n"
+            "3. peer_id          (integer, optional, default=false) Id of peer to send transaction to\n"
             "\nResult:\n"
             "\"hex\"             (string) The transaction hash in hex\n"
             "\nExamples:\n"
@@ -960,9 +966,19 @@ UniValue sendrawtransaction(const JSONRPCRequest& request)
         throw JSONRPCError(RPC_CLIENT_P2P_DISABLED, "Error: Peer-to-peer functionality missing or disabled");
 
     CInv inv(MSG_TX, hashTx);
-    g_connman->ForEachNode([&inv](CNode* pnode)
+    NodeId peerId; bool sendOnlyToOnePeer = false;
+    if (request.params.size() > 2) {
+        peerId = request.params[2].get_int64();
+        sendOnlyToOnePeer = true;
+    }
+    g_connman->ForEachNode([&inv, peerId, sendOnlyToOnePeer](CNode* pnode)
     {
+        if (sendOnlyToOnePeer && pnode->GetId() != peerId) {
+            pnode->AddInventoryKnown(inv);
+            return;
+        }
         pnode->PushInventory(inv);
+        pnode->nNextInvSend = 0;
     });
     return hashTx.GetHex();
 }

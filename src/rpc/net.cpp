@@ -2,26 +2,26 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "rpc/server.h"
+#include "../rpc/server.h"
 
-#include "chainparams.h"
-#include "clientversion.h"
-#include "core_io.h"
-#include "validation.h"
-#include "net.h"
-#include "net_processing.h"
-#include "netbase.h"
-#include "policy/policy.h"
+#include "../chainparams.h"
+#include "../clientversion.h"
+#include "../core_io.h"
+#include "../validation.h"
+#include "../net.h"
+#include "../net_processing.h"
+#include "../netbase.h"
+#include "../policy/policy.h"
 #include "protocol.h"
-#include "sync.h"
-#include "timedata.h"
-#include "ui_interface.h"
-#include "util.h"
-#include "utilstrencodings.h"
-#include "version.h"
-#include "warnings.h"
+#include "../sync.h"
+#include "../timedata.h"
+#include "../ui_interface.h"
+#include "../util.h"
+#include "../utilstrencodings.h"
+#include "../version.h"
+#include "../warnings.h"
 
-#include <univalue.h>
+#include <../univalue/include/univalue.h>
 
 UniValue getconnectioncount(const JSONRPCRequest& request)
 {
@@ -622,6 +622,17 @@ UniValue setnetworkactive(const JSONRPCRequest& request)
     return g_connman->GetNetworkActive();
 }
 
+UniValue sendTxSimultaneously(const JSONRPCRequest& request)
+{
+    if(!g_connman)
+        throw JSONRPCError(RPC_CLIENT_P2P_DISABLED, "Error: Peer-to-peer functionality missing or disabled");
+
+    if (!g_connman->SendTxSimultaneously())
+        throw JSONRPCError(RPC_CLIENT_NODE_NOT_ADDED, "Error: Node has not been added.");
+
+    return NullUniValue;
+}
+
 static const CRPCCommand commands[] =
 { //  category              name                      actor (function)         argNames
   //  --------------------- ------------------------  -----------------------  ----------
@@ -637,6 +648,7 @@ static const CRPCCommand commands[] =
     { "network",            "listbanned",             &listbanned,             {} },
     { "network",            "clearbanned",            &clearbanned,            {} },
     { "network",            "setnetworkactive",       &setnetworkactive,       {"state"} },
+    { "network",            "sendtxsim",              &sendTxSimultaneously,   {} },
 };
 
 void RegisterNetRPCCommands(CRPCTable &t)

@@ -2574,6 +2574,12 @@ bool CConnman::DisconnectNode(NodeId id)
     return false;
 }
 
+bool CConnman::SendTxSimultaneously()
+{
+    LogPrint(BCLog::DISTTX, "User wants to SendTxSimultaneously\n");
+    return true;
+}
+
 void CConnman::RecordBytesRecv(uint64_t bytes)
 {
     LOCK(cs_totalBytesRecv);
