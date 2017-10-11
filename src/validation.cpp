@@ -520,11 +520,11 @@ static bool AcceptToMemoryPoolWorker(const CChainParams& chainparams, CTxMemPool
                         }
                     }
                 }
-                if (fReplacementOptOut) {
-                    return state.Invalid(false, REJECT_DUPLICATE, "txn-mempool-conflict");
-                }
+//                if (fReplacementOptOut) {
+//                    return state.Invalid(false, REJECT_DUPLICATE, "txn-mempool-conflict");
+//                }
 
-                setConflicts.insert(ptxConflicting->GetHash());
+//                setConflicts.insert(ptxConflicting->GetHash());
             }
         }
     }
