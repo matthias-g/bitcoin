@@ -932,9 +932,15 @@ UniValue sendrawtransaction(const JSONRPCRequest& request)
             + HelpExampleRpc("sendrawtransaction", "\"signedhex\"")
         );
 
+    CMutableTransaction mtx;
+    if (!DecodeHexTx(mtx, request.params[0].get_str()))
+        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "TX decode failed");
+    CTransactionRef tx(MakeTransactionRef(std::move(mtx)));
+    const uint256& hashTx = tx->GetHash();
+
     if (request.params.size() > 5 && request.params[5].get_bool()) {
         queuedSendRawTransactions.push_back(request.params);
-        return 1;
+        return hashTx.GetHex();
     } else {
         if (queuedSendRawTransactions.size() > 0) {
             queuedSendRawTransactions.push_back(request.params);
@@ -942,7 +948,7 @@ UniValue sendrawtransaction(const JSONRPCRequest& request)
             for (auto &params : queuedSendRawTransactions) {
                 sendOneRawTransaction(params, now + params[3].get_int64());
             }
-            return 2;
+            return hashTx.GetHex();
         }
         return sendOneRawTransaction(request.params);
     }
