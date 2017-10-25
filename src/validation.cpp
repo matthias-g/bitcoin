@@ -1925,6 +1925,7 @@ bool static FlushStateToDisk(const CChainParams& chainparams, CValidationState &
         fDoFullFlush = (mode == FLUSH_STATE_ALWAYS) || fCacheLarge || fCacheCritical || fPeriodicFlush || fFlushForPrune;
         // Write blocks and block index to disk.
         if (fDoFullFlush || fPeriodicWrite) {
+            LogPrint(BCLog::NET, "Writing cache to disk...\n");
             // Depend on nMinDiskSpace to ensure we can write block index
             if (!CheckDiskSpace(0))
                 return state.Error("out of disk space");

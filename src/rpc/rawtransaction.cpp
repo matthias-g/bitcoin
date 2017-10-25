@@ -38,6 +38,8 @@
 #include <boost/assign/list_of.hpp>
 
 #include "../script/interpreter.h"
+#include "../netmessagemaker.h"
+#include "../univalue/include/univalue.h"
 
 
 void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry)
@@ -898,9 +900,14 @@ UniValue signrawtransaction(const JSONRPCRequest& request)
     return result;
 }
 
+std::vector<UniValue> queuedSendRawTransactions = std::vector<UniValue>();
+
+UniValue sendOneRawTransaction(const UniValue &params, const int64_t timestamp = 0);
+
 UniValue sendrawtransaction(const JSONRPCRequest& request)
 {
-    if (request.fHelp || request.params.size() < 1 || request.params.size() > 4)
+    LogPrint(BCLog::INV, "Starting rpc sendrawtransaction\n");
+    if (request.fHelp || request.params.size() < 1 || request.params.size() > 6)
         throw std::runtime_error(
             "sendrawtransaction \"hexstring\" ( allowhighfees )\n"
             "\nSubmits raw transaction (serialized, hex-encoded) to local node and network.\n"
@@ -910,6 +917,8 @@ UniValue sendrawtransaction(const JSONRPCRequest& request)
             "2. allowhighfees    (boolean, optional, default=false) Allow high fees\n"
             "3. peer_id          (integer, optional, default=false) Id of peer to send transaction to\n"
             "4. timestamp        (integer, optional, default=false) Timestamp when to send the transaction (in us)\n"
+            "5. unsolicitedTX    (boolean, optional, default=false) Send unsolicited TX message (skip sending INV)\n"
+            "6. addToQueue       (boolean, optional, default=false) Doesn't send the tx yet but adds it to a queue\n"
             "\nResult:\n"
             "\"hex\"             (string) The transaction hash in hex\n"
             "\nExamples:\n"
@@ -923,19 +932,36 @@ UniValue sendrawtransaction(const JSONRPCRequest& request)
             + HelpExampleRpc("sendrawtransaction", "\"signedhex\"")
         );
 
+    if (request.params.size() > 5 && request.params[5].get_bool()) {
+        queuedSendRawTransactions.push_back(request.params);
+        return 1;
+    } else {
+        if (queuedSendRawTransactions.size() > 0) {
+            queuedSendRawTransactions.push_back(request.params);
+            int64_t now = GetTimeMicros();
+            for (auto &params : queuedSendRawTransactions) {
+                sendOneRawTransaction(params, now + params[3].get_int64());
+            }
+            return 2;
+        }
+        return sendOneRawTransaction(request.params);
+    }
+}
+
+UniValue sendOneRawTransaction(const UniValue &params, const int64_t timestamp) {
     ObserveSafeMode();
     LOCK(cs_main);
-    RPCTypeCheck(request.params, {UniValue::VSTR, UniValue::VBOOL});
+    RPCTypeCheck(params, {UniValue::VSTR, UniValue::VBOOL, UniValue::VNUM});
 
     // parse hex string from parameter
     CMutableTransaction mtx;
-    if (!DecodeHexTx(mtx, request.params[0].get_str()))
+    if (!DecodeHexTx(mtx, params[0].get_str()))
         throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "TX decode failed");
     CTransactionRef tx(MakeTransactionRef(std::move(mtx)));
     const uint256& hashTx = tx->GetHash();
 
     CAmount nMaxRawTxFee = maxTxFee;
-    if (!request.params[1].isNull() && request.params[1].get_bool())
+    if (!params[1].isNull() && params[1].get_bool())
         nMaxRawTxFee = 0;
 
     CCoinsViewCache &view = *pcoinsTip;
@@ -949,7 +975,7 @@ UniValue sendrawtransaction(const JSONRPCRequest& request)
         // push to local node and sync with wallets
         CValidationState state;
         bool fMissingInputs;
-        if (!AcceptToMemoryPool(mempool, state, std::move(tx), &fMissingInputs,
+        if (!AcceptToMemoryPool(mempool, state, move(tx), &fMissingInputs,
                                 nullptr /* plTxnReplaced */, false /* bypass_limits */, nMaxRawTxFee)) {
             if (state.IsInvalid()) {
                 throw JSONRPCError(RPC_TRANSACTION_REJECTED, strprintf("%i: %s", state.GetRejectCode(), state.GetRejectReason()));
@@ -967,26 +993,49 @@ UniValue sendrawtransaction(const JSONRPCRequest& request)
         throw JSONRPCError(RPC_CLIENT_P2P_DISABLED, "Error: Peer-to-peer functionality missing or disabled");
 
     CInv inv(MSG_TX, hashTx);
-    NodeId peerId; bool sendOnlyToOnePeer = false;
-    if (request.params.size() > 2) {
-        peerId = request.params[2].get_int64();
+    NodeId peerId;
+    bool sendOnlyToOnePeer = false;
+    if (params.size() > 2) {
+        peerId = params[2].get_int64();
         sendOnlyToOnePeer = true;
     }
-    int64_t sendTimestamp = 0;
-    if (request.params.size() > 3) {
-        sendTimestamp = request.params[3].get_int64();
+    int64_t sendTimestamp = timestamp;
+    if (params.size() > 3 && sendTimestamp == 0) {
+        sendTimestamp = params[3].get_int64();
     }
-    g_connman->ForEachNode([&inv, peerId, sendOnlyToOnePeer, sendTimestamp](CNode* pnode)
+    bool sendUnsolicitedTX = false;
+    if (params.size() > 4) {
+        sendUnsolicitedTX = params[4].get_bool();
+    }
+    LogPrint(BCLog::INV, "Starting to send\n");
+    g_connman->ForEachNode([&inv, peerId, sendOnlyToOnePeer, sendTimestamp, sendUnsolicitedTX](CNode* pnode)
     {
         if (sendOnlyToOnePeer && pnode->GetId() != peerId) {
             pnode->AddInventoryKnown(inv);
             return;
         }
-        pnode->PushInventory(inv);
-        pnode->nNextInvSend = 0;
-        pnode->nTimedDataSend = sendTimestamp;
-        pnode->invTimedData = inv;
+        if (sendUnsolicitedTX) {
+            pnode->nTimedDataSend = sendTimestamp;
+            pnode->delaySending = true;
+            LogPrint(BCLog::NET, "Delaying sending of tx for peer=%d until %d\n", pnode->GetId(), pnode->nTimedDataSend);
+            {
+                LOCK(g_connman->cs_delayedPeers);
+                g_connman->delayedPeersCount += 1;
+                pnode->AddRef();
+                g_connman->delayedPeers.push_back(pnode);
+            }
+            const CNetMsgMaker msgMaker(pnode->GetSendVersion());
+            int nSendFlags = SERIALIZE_TRANSACTION_NO_WITNESS;
+            auto txinfo = mempool.info(inv.hash);
+            g_connman->PushMessage(pnode, msgMaker.Make(nSendFlags, NetMsgType::TX, *txinfo.tx));
+        } else {
+            pnode->PushInventory(inv);
+            pnode->nNextInvSend = 0;
+            pnode->nTimedDataSend = sendTimestamp;
+            pnode->invTimedData = inv;
+        }
     });
+    LogPrint(BCLog::INV, "Finished rpc sendrawtransaction\n");
     return hashTx.GetHex();
 }
 
