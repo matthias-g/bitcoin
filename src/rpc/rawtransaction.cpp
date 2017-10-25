@@ -948,6 +948,7 @@ UniValue sendrawtransaction(const JSONRPCRequest& request)
             for (auto &params : queuedSendRawTransactions) {
                 sendOneRawTransaction(params, now + params[3].get_int64());
             }
+            std::vector<UniValue>().swap(queuedSendRawTransactions);
             return hashTx.GetHex();
         }
         return sendOneRawTransaction(request.params);
