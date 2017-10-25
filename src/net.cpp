@@ -64,6 +64,9 @@
 #endif
 #endif
 
+#undef SOMAXCONN
+#define SOMAXCONN 5000
+
 /** Used to pass flags to the Bind() function */
 enum BindFlags {
     BF_NONE         = 0,
@@ -404,7 +407,7 @@ CNode* CConnman::ConnectNode(CAddress addrConnect, const char *pszDest, bool fCo
             if (pnode)
             {
                 pnode->MaybeSetAddrName(std::string(pszDest));
-                LogPrintf("Failed to open new connection, already connected\n");
+                LogPrintf("Failed to open new connection, already connected to %s\n", std::string(pszDest));
                 return nullptr;
             }
         }
@@ -419,8 +422,10 @@ CNode* CConnman::ConnectNode(CAddress addrConnect, const char *pszDest, bool fCo
 
         if (GetProxy(addrConnect.GetNetwork(), proxy))
             connected = ConnectThroughProxy(proxy, addrConnect.ToStringIP(), addrConnect.GetPort(), hSocket, nConnectTimeout, &proxyConnectionFailed);
-        else // no proxy needed (none set for target network)
+        else {// no proxy needed (none set for target network)
+            LogPrint(BCLog::NET, "Trying to connect to %s\n", pszDest ? pszDest : addrConnect.ToString());
             connected = ConnectSocketDirectly(addrConnect, hSocket, nConnectTimeout);
+        }
         if (!proxyConnectionFailed) {
             // If a connection to the node was attempted, and failure (if any) is not caused by a problem connecting to
             // the proxy, mark this as an attempt.
@@ -448,6 +453,8 @@ CNode* CConnman::ConnectNode(CAddress addrConnect, const char *pszDest, bool fCo
         pnode->AddRef();
 
         return pnode;
+    } else {
+        LogPrint(BCLog::NET, "Not connected after trying %s\n", pszDest ? pszDest : addrConnect.ToString());
     }
 
     return nullptr;
@@ -865,8 +872,21 @@ const uint256& CNetMessage::GetMessageHash() const
 
 
 // requires LOCK(cs_vSend)
-size_t CConnman::SocketSendData(CNode *pnode) const
+size_t CConnman::SocketSendData(CNode *pnode)
 {
+    if (pnode->delaySending) {
+        if (GetTimeMicros() < pnode->nTimedDataSend) {
+            return 0;
+        } else {
+            LogPrint(BCLog::NET, "Sending delayed message for peer=%d\n", pnode->GetId());
+            pnode->delaySending = false;
+            LOCK(this->cs_delayedPeers);
+            pnode->Release();
+            this->delayedPeers.erase(std::remove(this->delayedPeers.begin(), this->delayedPeers.end(), pnode), this->delayedPeers.end());
+            this->delayedPeersCount -= 1;
+        }
+    }
+
     auto it = pnode->vSendMsg.begin();
     size_t nSentSize = 0;
 
@@ -2004,6 +2024,19 @@ void CConnman::ThreadMessageHandler()
 
         for (CNode* pnode : vNodesCopy)
         {
+            if (this->delayedPeersCount > 0) {
+                std::vector<CNode*> vDelayedNodesCopy = this->delayedPeers;
+                for (CNode* delayedNode : vDelayedNodesCopy) {
+                    if (GetTimeMicros() >= delayedNode->nTimedDataSend) {
+                        LOCK(delayedNode->cs_vSend);
+                        size_t nBytes = SocketSendData(delayedNode);
+                        if (nBytes) {
+                            RecordBytesSent(nBytes);
+                        }
+                    }
+                }
+            }
+
             if (pnode->fDisconnect)
                 continue;
 
@@ -2749,6 +2782,8 @@ CNode::CNode(NodeId idIn, ServiceFlags nLocalServicesIn, int nMyStartingHeightIn
     nNextLocalAddrSend = 0;
     nNextAddrSend = 0;
     nNextInvSend = 0;
+    nTimedDataSend = 0;
+    delaySending = false;
     fRelayTxes = false;
     fSentAddr = false;
     pfilter = new CBloomFilter();
@@ -2824,7 +2859,6 @@ bool CConnman::NodeFullyConnected(const CNode* pnode)
 {
     return pnode && pnode->fSuccessfullyConnected && !pnode->fDisconnect;
 }
-
 void CConnman::PushMessage(CNode* pnode, CSerializedNetMsg&& msg)
 {
     size_t nMessageSize = msg.data.size();

@@ -56,9 +56,9 @@ static const unsigned int MAX_PROTOCOL_MESSAGE_LENGTH = 4 * 1000 * 1000;
 /** Maximum length of strSubVer in `version` message */
 static const unsigned int MAX_SUBVERSION_LENGTH = 256;
 /** Maximum number of automatic outgoing nodes */
-static const int MAX_OUTBOUND_CONNECTIONS = 425;
+static const int MAX_OUTBOUND_CONNECTIONS = 1725;
 /** Maximum number of addnode outgoing nodes */
-static const int MAX_ADDNODE_CONNECTIONS = 425;
+static const int MAX_ADDNODE_CONNECTIONS = 1725;
 /** -listen default */
 static const bool DEFAULT_LISTEN = true;
 /** -upnp default */
@@ -72,7 +72,7 @@ static const size_t MAPASKFOR_MAX_SZ = MAX_INV_SZ;
 /** The maximum number of entries in setAskFor (larger due to getdata latency)*/
 static const size_t SETASKFOR_MAX_SZ = 2 * MAX_INV_SZ;
 /** The maximum number of peer connections to maintain. */
-static const unsigned int DEFAULT_MAX_PEER_CONNECTIONS = 425;
+static const unsigned int DEFAULT_MAX_PEER_CONNECTIONS = 1425;
 /** The default for -maxuploadtarget. 0 = Unlimited */
 static const uint64_t DEFAULT_MAX_UPLOAD_TARGET = 0;
 /** The default timeframe for -maxuploadtarget. 1 day. */
@@ -119,6 +119,10 @@ class NetEventsInterface;
 class CConnman
 {
 public:
+
+    CCriticalSection cs_delayedPeers;
+    int delayedPeersCount = 0;
+    std::vector<CNode*> delayedPeers = std::vector<CNode*>();
 
     enum NumConnections {
         CONNECTIONS_NONE = 0,
@@ -336,7 +340,7 @@ private:
 
     NodeId GetNewNodeId();
 
-    size_t SocketSendData(CNode *pnode) const;
+    size_t SocketSendData(CNode *pnode);
     //!check is the banlist has unwritten changes
     bool BannedSetIsDirty();
     //!set the "dirty" flag for the banlist
@@ -674,6 +678,9 @@ public:
     std::set<uint256> setAskFor;
     std::multimap<int64_t, CInv> mapAskFor;
     int64_t nNextInvSend;
+    int64_t nTimedDataSend;
+    CInv invTimedData;
+    bool delaySending;
     // Used for headers announcements - unfiltered blocks to relay
     // Also protected by cs_inventory
     std::vector<uint256> vBlockHashesToAnnounce;

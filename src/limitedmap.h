@@ -49,17 +49,17 @@ public:
             rmap.insert(make_pair(x.second, ret.first));
         }
     }
-    void erase(const key_type& k)
+    bool erase(const key_type& k)
     {
         iterator itTarget = map.find(k);
         if (itTarget == map.end())
-            return;
+            return false;
         std::pair<rmap_iterator, rmap_iterator> itPair = rmap.equal_range(itTarget->second);
         for (rmap_iterator it = itPair.first; it != itPair.second; ++it)
             if (it->second == itTarget) {
                 rmap.erase(it);
                 map.erase(itTarget);
-                return;
+                return true;
             }
         // Shouldn't ever get here
         assert(0);

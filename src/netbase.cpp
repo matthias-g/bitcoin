@@ -464,8 +464,10 @@ bool ConnectSocketDirectly(const CService &addrConnect, SOCKET& hSocketRet, int 
     }
 
     SOCKET hSocket = socket(((struct sockaddr*)&sockaddr)->sa_family, SOCK_STREAM, IPPROTO_TCP);
-    if (hSocket == INVALID_SOCKET)
+    if (hSocket == INVALID_SOCKET) {
+        LogPrint(BCLog::NET, "Invalid Socket\n");
         return false;
+    }
 
 #ifdef SO_NOSIGPIPE
     int set = 1;
@@ -495,7 +497,7 @@ bool ConnectSocketDirectly(const CService &addrConnect, SOCKET& hSocketRet, int 
             int nRet = select(hSocket + 1, nullptr, &fdset, nullptr, &timeout);
             if (nRet == 0)
             {
-                LogPrint(BCLog::NET, "connection to %s timeout\n", addrConnect.ToString());
+                LogPrint(BCLog::NET, "connection to %s timeout with error %d\n", addrConnect.ToString(), nErr);
                 CloseSocket(hSocket);
                 return false;
             }

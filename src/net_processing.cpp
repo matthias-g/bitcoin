@@ -1535,7 +1535,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                 return true;
 
             bool fAlreadyHave = AlreadyHave(inv);
-            LogPrint(BCLog::INV, "got inv: %s  %s peer=%d\n", inv.ToString(), fAlreadyHave ? "have" : "new", pfrom->addr.ToString());
+            LogPrint(BCLog::INV, "got inv: %s  %s of %d peer=%d\n", inv.ToString(), fAlreadyHave ? "have" : "new", vInv.size(), pfrom->addr.ToString());
 
             if (inv.type == MSG_TX) {
                 inv.type |= nFetchFlags;
@@ -1584,6 +1584,14 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
         if (vInv.size() > 0) {
             LogPrint(BCLog::NET, "received getdata for: %s peer=%d\n", vInv[0].ToString(), pfrom->GetId());
+            if (vInv[0].hash == pfrom->invTimedData.hash) {
+                pfrom->delaySending = true;
+                LogPrint(BCLog::NET, "Delaying sending of message for peer=%d until %d\n", pfrom->GetId(), pfrom->nTimedDataSend);
+                LOCK(connman->cs_delayedPeers);
+                connman->delayedPeersCount += 1;
+                pfrom->AddRef();
+                connman->delayedPeers.push_back(pfrom);
+            }
         }
 
         pfrom->vRecvGetData.insert(pfrom->vRecvGetData.end(), vInv.begin(), vInv.end());
@@ -1783,8 +1791,10 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         bool fMissingInputs = false;
         CValidationState state;
 
-        pfrom->setAskFor.erase(inv.hash);
-        mapAlreadyAskedFor.erase(inv.hash);
+        size_t numErased = pfrom->setAskFor.erase(inv.hash);
+        bool erasedFromMap = mapAlreadyAskedFor.erase(inv.hash);
+        if (numErased == 0 || !erasedFromMap)
+            LogPrint(BCLog::NET, "Received unsolicited tx message from peer=%d\n", pfrom->GetId());
 
         std::list<CTransactionRef> lRemovedTxn;
 

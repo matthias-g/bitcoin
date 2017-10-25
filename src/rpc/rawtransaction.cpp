@@ -900,7 +900,7 @@ UniValue signrawtransaction(const JSONRPCRequest& request)
 
 UniValue sendrawtransaction(const JSONRPCRequest& request)
 {
-    if (request.fHelp || request.params.size() < 1 || request.params.size() > 3)
+    if (request.fHelp || request.params.size() < 1 || request.params.size() > 4)
         throw std::runtime_error(
             "sendrawtransaction \"hexstring\" ( allowhighfees )\n"
             "\nSubmits raw transaction (serialized, hex-encoded) to local node and network.\n"
@@ -909,6 +909,7 @@ UniValue sendrawtransaction(const JSONRPCRequest& request)
             "1. \"hexstring\"    (string, required) The hex string of the raw transaction)\n"
             "2. allowhighfees    (boolean, optional, default=false) Allow high fees\n"
             "3. peer_id          (integer, optional, default=false) Id of peer to send transaction to\n"
+            "4. timestamp        (integer, optional, default=false) Timestamp when to send the transaction (in us)\n"
             "\nResult:\n"
             "\"hex\"             (string) The transaction hash in hex\n"
             "\nExamples:\n"
@@ -971,7 +972,11 @@ UniValue sendrawtransaction(const JSONRPCRequest& request)
         peerId = request.params[2].get_int64();
         sendOnlyToOnePeer = true;
     }
-    g_connman->ForEachNode([&inv, peerId, sendOnlyToOnePeer](CNode* pnode)
+    int64_t sendTimestamp = 0;
+    if (request.params.size() > 3) {
+        sendTimestamp = request.params[3].get_int64();
+    }
+    g_connman->ForEachNode([&inv, peerId, sendOnlyToOnePeer, sendTimestamp](CNode* pnode)
     {
         if (sendOnlyToOnePeer && pnode->GetId() != peerId) {
             pnode->AddInventoryKnown(inv);
@@ -979,6 +984,8 @@ UniValue sendrawtransaction(const JSONRPCRequest& request)
         }
         pnode->PushInventory(inv);
         pnode->nNextInvSend = 0;
+        pnode->nTimedDataSend = sendTimestamp;
+        pnode->invTimedData = inv;
     });
     return hashTx.GetHex();
 }
