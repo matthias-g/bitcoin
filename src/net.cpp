@@ -2025,7 +2025,14 @@ void CConnman::ThreadMessageHandler()
         for (CNode* pnode : vNodesCopy)
         {
             if (this->delayedPeersCount > 0) {
-                std::vector<CNode*> vDelayedNodesCopy = this->delayedPeers;
+                std::vector<CNode*> vDelayedNodesCopy;
+                {
+                    LOCK(this->cs_delayedPeers);
+                    vDelayedNodesCopy = this->delayedPeers;
+                    for (CNode* delayedNode : vDelayedNodesCopy) {
+                        delayedNode->AddRef();
+                    }
+                }
                 for (CNode* delayedNode : vDelayedNodesCopy) {
                     if (GetTimeMicros() >= delayedNode->nTimedDataSend) {
                         LOCK(delayedNode->cs_vSend);
@@ -2034,6 +2041,11 @@ void CConnman::ThreadMessageHandler()
                             RecordBytesSent(nBytes);
                         }
                     }
+                }
+                {
+                    LOCK(this->cs_delayedPeers);
+                    for (CNode* delayedNode : vDelayedNodesCopy)
+                        delayedNode->Release();
                 }
             }
 
