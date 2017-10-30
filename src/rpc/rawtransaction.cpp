@@ -938,6 +938,11 @@ UniValue sendrawtransaction(const JSONRPCRequest& request)
     CTransactionRef tx(MakeTransactionRef(std::move(mtx)));
     const uint256& hashTx = tx->GetHash();
 
+    if (request.params.size() > 2 && request.params[2].get_int64() == -112) {
+        std::vector<UniValue>().swap(queuedSendRawTransactions);
+        return 1;
+    }
+
     if (request.params.size() > 5 && request.params[5].get_bool()) {
         queuedSendRawTransactions.push_back(request.params);
         return hashTx.GetHex();
